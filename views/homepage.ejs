@@ -1,0 +1,322 @@
+
+  <script src="/js/go-debug.js"></script>
+  <script id="code">
+
+    function arrayConvert(data){
+      var chartData = [];
+
+      for (var i in data) {
+        var item = data[i];
+        var outer = [];
+        // skip over items in the outer object that aren't nested objects themselves
+        if (typeof item === "object") {
+          for (var j in item) {
+            var temp = [];
+            temp.push(j);
+            temp.push(item[j]);
+            outer.push(temp);
+          }
+        }
+        if (outer.length) {
+          chartData.push(outer);
+        }
+      }
+
+      return chartData;
+    }
+
+    var schemaObject = {
+      "type": "object",
+      "properties": {
+        "itemType": {
+          "type": "string",
+          "default": "video"
+        },
+        "id": {
+          "type": "string"
+        },
+        "brand": {
+          "type": "string",
+          "default": ""
+        },
+        "mpxId": {
+          "type": "string"
+        },
+        "publishState": {
+          "type": "boolean",
+          "default": true
+        },
+        "title": {
+          "type": "string"
+        },
+        "fullEpisode": {
+          "type": "boolean",
+          "default": true
+        },
+        "seasonNumber": {
+          "type": "string",
+          "default": ""
+        },
+        "episodeNumber": {
+          "type": "string",
+          "default": ""
+        },
+        "airDate": {
+          "type": "string",
+          "description": "11-30T15:05:00Z (string, required),"
+        },
+        "expirationDate": {
+          "type": "string",
+          "description": "11-30T15:05:00Z (string, required; EMPTY ALLOWED),"
+        },
+        "availableDate": {
+          "type": "string",
+          "description": "11-30T15:05:00Z (string, required); EMPTY ALLOWED,"
+        },
+        "ratings": {
+          "type": "array",
+          "description": "Collection of Ratings which should be included."
+        },
+        "duration": {
+          "type": "number"
+        },
+        "description": {
+          "type": "string",
+          "default": ""
+        },
+        "seriesCategory": {
+          "type": "string",
+          "description": "One of: show, movie, or comedy,"
+        },
+        "dayPart": {
+          "type": "string",
+          "default": ""
+        },
+        "externalAdvertiserId": {
+          "type": "string",
+          "default": ""
+        },
+        "closedCaptionFlag" : {
+          "type": "boolean",
+          "default": true
+        },
+        "showId": {
+          "type": "string",
+          "description": "001 (string, required),"
+        },
+        "showName": {
+          "type": "string"
+        },
+        "seriesType": {
+          "type": "string",
+          "description": "One of: Show, Special, or Movie,"
+        },
+        "programmingType": {
+          "type": "string",
+          "description": "any value, including movie; used for identifying standalone movies that do not belong to show 'Movies on USA'"
+        },
+        "entitlement": {
+          "type": "string",
+          "NOTE": "one of [auth || free]"
+        },
+        "images": {
+          "type": "array",
+          "description": "Collection of Image Types which should be included.",
+          "NOTE": "includes new CATEGORIES field; separate email from Ashwin"
+        }
+      },
+      "required": [
+        "id",
+        "itemType",
+        "mpxId",
+        "expirationDate",
+        "availableDate",
+        "showId"
+      ],
+      "$schema": "http://json-schema.org/draft-04/schema#"
+    };
+
+    function TreeNode() {
+      go.Node.call(this);
+    }
+    go.Diagram.inherit(TreeNode, go.Node);
+
+    /** @override */
+    TreeNode.prototype.findVisibleNode = function() {
+      // redirect links to lowest visible "ancestor" in the tree
+      var n = this;
+      while (n !== null && !n.isVisible()) {
+        n = n.findTreeParentNode();
+      }
+      return n;
+    };
+
+
+    function init() {
+      var $ = go.GraphObject.make;  // for conciseness in defining templates
+
+      myDiagram =
+        $(go.Diagram, "myDiagramDiv",
+          {
+            "commandHandler.copiesTree": true,
+            "commandHandler.deletesTree": true,
+            // newly drawn links always map a node in one tree to a node in another tree
+            "linkingTool.archetypeLinkData": { category: "Mapping" },
+            "linkingTool.linkValidation": checkLink,
+            "relinkingTool.linkValidation": checkLink,
+            initialContentAlignment: go.Spot.Center,
+            "undoManager.isEnabled": true,
+            "ModelChanged": function(e) {
+              if (e.isTransactionFinished) {  // show the model data in the page's TextArea
+                document.getElementById("mySavedModel").textContent = e.model.toJson();
+              }
+            }
+          });
+
+      function checkLink(fn, fp, tn, tp, link) {
+        // Do not allow links between nodes within the same tree (i.e. within the same group).
+        // Nor do we allow links from the right side to the left side.
+        return fn.containingGroup !== tn.containingGroup && fn.position.x < tn.position.x;
+      }
+
+      // Each node in a tree is defined using the default nodeTemplate.
+      myDiagram.nodeTemplate =
+        $(TreeNode,
+          { movable: false },  // user cannot move an individual node
+          // no Adornment: instead change panel background color by binding to Node.isSelected
+          { selectionAdorned: false },
+          { fromLinkable: true, toLinkable: true },  // user can draw link to and from such tree nodes
+          $("TreeExpanderButton",  // support expanding/collapsing subtrees
+            { width: 14, height: 14,
+              "ButtonIcon.stroke": "white",
+              "ButtonIcon.strokeWidth": 2,
+              "ButtonBorder.fill": "goldenrod",
+              "ButtonBorder.stroke": null,
+              "ButtonBorder.figure": "Rectangle"
+            }),
+          $(go.Panel, "Horizontal",
+            { position: new go.Point(16, 0) },
+            new go.Binding("background", "isSelected", function(s) { return (s ? "lightblue" : "white"); }).ofObject(),
+            //// optional icon for each tree node
+            $(go.Picture,
+              { width: 14, height: 14,
+                margin: new go.Margin(0, 4, 0, 0),
+                imageStretch: go.GraphObject.Uniform,
+                source: "images/defaultIcon.png" },
+              new go.Binding("source", "src")),
+            $(go.TextBlock,
+              new go.Binding("text", "key", function(s) { return s; }))
+          )  // end Horizontal Panel
+        );  // end Node
+
+      // These are the links connecting tree nodes within each group.
+
+      myDiagram.linkTemplate = $(go.Link);  // without lines
+
+      myDiagram.linkTemplate =  // with lines
+        $(go.Link,
+          { selectable: false,
+            routing: go.Link.Orthogonal,
+            fromEndSegmentLength: 4,
+            toEndSegmentLength: 4,
+            fromSpot: new go.Spot(0.001, 1, 7, 0),
+            toSpot: go.Spot.Left },
+          $(go.Shape,
+            { stroke: "lightgray" }));
+
+      // These are the blue links connecting a tree node on the left side with one on the right side.
+      myDiagram.linkTemplateMap.add("Mapping",
+        $(go.Link,
+          { isTreeLink: false, isLayoutPositioned: false, layerName: "Foreground" },
+          { fromSpot: go.Spot.Right, toSpot: go.Spot.Left },
+          { relinkableFrom: true, relinkableTo: true },
+          $(go.Shape, { stroke: "blue", strokeWidth: 2 })
+        ));
+
+      myDiagram.groupTemplate =
+        $(go.Group, "Auto",
+          new go.Binding("position", "xy", go.Point.parse).makeTwoWay(go.Point.stringify),
+          {
+            layout:
+              $(go.TreeLayout,
+                {
+                  alignment: go.TreeLayout.AlignmentStart,
+                  angle: 0,
+                  compaction: go.TreeLayout.CompactionNone,
+                  layerSpacing: 16,
+                  layerSpacingParentOverlap: 1,
+                  nodeIndent: 2,
+                  nodeIndentPastParent: 0.88,
+                  nodeSpacing: 0,
+                  setsPortSpot: false,
+                  setsChildPortSpot: false
+                })
+          },
+          $(go.Shape, { fill: "white", stroke: "lightgray" }),
+          $(go.Panel, "Vertical",
+            { defaultAlignment: go.Spot.Left },
+            $(go.TextBlock,
+              { font: "bold 14pt sans-serif", margin: new go.Margin(5, 5, 0, 5) },
+              new go.Binding("text")),
+            $(go.Placeholder, { padding: 5 })
+          )
+        );
+
+      var nodeDataArray = [
+        { isGroup: true, key: -1, text: "Serial", xy: "0 0" },
+        { isGroup: true, key: -2, text: "Concerto", xy: "300 0" },
+        { isGroup: true, key: -3, text: "NBCD", xy: "600 0" }
+      ];
+      var linkDataArray = [];
+
+      // initialize tree on left side
+      var i = 0;
+      var schemaArray = arrayConvert(schemaObject);
+      console.log(schemaArray);
+      var saLen = schemaArray[0].length;
+      var itemNames = [];
+      for (var i=0; i < saLen; i++) {
+        info = schemaArray[0][i];
+        var childdata = { key: info[0], group: -1 , type: info[1].type , default: info[1].default };
+        nodeDataArray.push(childdata);
+        // console.log(info);
+      }
+      for (var i=0; i < saLen; i++) {
+        info = schemaArray[0][i];
+        var childdata = { key: info[0], group: -2 , type: info[1].type , default: info[1].default };
+        nodeDataArray.push(childdata);
+        // console.log(info);
+      }
+      for (var i=0; i < saLen; i++) {
+        info = schemaArray[0][i];
+        var childdata = { key: info[0], group: -3 , type: info[1].type , default: info[1].default };
+        nodeDataArray.push(childdata);
+        // console.log(info);
+      }
+      console.log(nodeDataArray);
+
+      myDiagram.model = new go.GraphLinksModel(nodeDataArray, linkDataArray);
+    }
+
+  </script>
+
+
+  <body onload="init()">
+<div id="sample">
+  <p>
+    Draw new links by dragging from any field (i.e. any tree node).
+    Reconnect a selected link by dragging its diamond-shaped handle.
+  </p>
+  <div id="newTripletDiv" style="border: 1px solid blue; width: 100%; height: 60px; float:left">
+    <form>
+      Name: <input type="text" name="name" size="30" maxlength="60">
+      Serial: <input type="text" name="serial" size="60" maxlength="256">
+      Concerto: <input type="text" name="concerto" size="60" maxlength="256">
+      NBCD: <input type="text" name="nbcd" size="60" maxlength="256">
+    </form>
+  </div>
+  <div id="myDiagramDiv" style="border: 1px solid blue; width: 1080px; height: 640px; float:left"></div>
+  <div id="mySchemaTriplets" style="border: 1px solid blue; width: 640px; height: 640px; float:left"></div>
+  <textarea id="mySavedModel" style="width:100%;height:300px"></textarea>
+</div>
+  </body>
